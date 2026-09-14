@@ -2,25 +2,40 @@
 
 ## Setup
 
-1. Install dependencies:
-   ```
+1. Ensure PHP 8.1 or later, MariaDB/MySQL, and the PHP `pdo_mysql`, `gd`,
+   and `mbstring` extensions are enabled.
+2. Install Composer dependencies:
+   ```bash
    composer install
    ```
-2. Create the database:
+3. Create the `idcard_system` database, then import the complete supplied dump.
+   Do not use `schema.sql`; it is a simplified reference schema and does not
+   include all tables and data used by the dashboard.
+   ```bash
+   mysql -u root -p -e "CREATE DATABASE idcard_system CHARACTER SET utf8mb4"
+   mysql -u root -p idcard_system < "idcard_system (3).sql"
    ```
-   mysql -u root -p < schema.sql
-   ```
-3. Edit `include/config.php` with your real DB credentials and confirm
+4. Edit `include/config.php` with your real DB credentials and confirm
    `CARD_WIDTH_MM` / `CARD_HEIGHT_MM` match the actual card stock.
-4. Confirm the image paths in the `colleges` table point to files under
+5. Make sure PHP can write to `output/`, `tmp/mpdf/`, and
+   `uploads/photos_processed/`.
+6. Confirm the image paths in the `colleges` table point to files under
    `/assets/images/`.
-5. Upload student photos to `uploads/photos/`, with `photo_path`
+7. Upload student photos to `uploads/photos/`, with `photo_path`
    set on each student row.
+8. Serve `idcard-system` as the web root and open
+   `biometric/dashboard.php`.
 
 ## Generating a batch
 
-```
+```bash
 php biometric/generate_batch.php <college_id>
+```
+
+Optionally supply a level and programme ID:
+
+```bash
+php biometric/generate_batch.php <college_id> <level> <programme_id>
 ```
 
 This will:
@@ -51,22 +66,32 @@ ID remains the underlying record key:
 ## Folder structure
 
 ```
-/templates
-    /front       shared_front.php - ONE layout for every college,
-                 themed via colleges.primary_color (blue/yellow/green/etc).
-                 Drop a file named {template_key}.php here only if a
-                 specific college ever needs a genuinely different layout;
-                 Renderer.php picks it up automatically over the shared one.
-    /back        shared_back.php - identical for every college
-   /partials    header_logo.php, footer2.php, middle.php - shared card parts
-/lib
+/assets
+    /images              university, registrar, and college image assets
+    /idcardtemplates
+        /front       shared_front.php - ONE layout for every college,
+                     themed via colleges.primary_color (blue/yellow/green/etc).
+                     Drop a file named {template_key}.php here only if a
+                     specific college ever needs a genuinely different layout;
+                     Renderer.php picks it up automatically over the shared one.
+        /back        shared_back.php - identical for every college
+        /partials    header_logo.php, footer.php, middle.php - shared card parts
+/biometric
+    dashboard.php          web dashboard
+    generate_batch.php     web/CLI PDF generator
+/class
     Database.php
     PhotoProcessor.php
     Renderer.php
+/include
+    config.php
 /output          generated batch PDFs land here
+/tmp/mpdf        mPDF temporary files and cache
 /uploads
     /photos            raw uploaded photos
     /photos_processed  resized/normalized/compressed photos
+/vendor          Composer dependencies (created by composer install)
+/idcard_system (3).sql  complete database dump used for setup
 ```
 
 ## Design notes worth remembering
@@ -79,7 +104,7 @@ ID remains the underlying record key:
   `assets/idcardtemplates/back/shared_back.php`.
 
 - **Front layout is fully shared** (`assets/idcardtemplates/front/shared_front.php`).
-   `primary_color` and `logo_path` are loaded from the college record. Adding
+  `primary_color` and `logo_path` are loaded from the college record. Adding
   a new college is a single row insert, no new file. If a college's
   layout ever genuinely diverges, add `assets/idcardtemplates/front/{template_key}.php`
   and it overrides the shared template automatically for that college
