@@ -1,0 +1,23 @@
+# Composer dependencies
+/vendor/
+
+# Generated ID-card PDFs
+/output/
+
+# mPDF temporary/cache files
+/tmp/
+
+# Student uploads and generated processed photos
+/uploads/
+
+# Local environment credentials
+.env
+.env.*
+!.env.example
+
+# Logs and OS/editor files
+*.log
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/

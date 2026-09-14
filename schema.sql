@@ -29,6 +29,7 @@ CREATE TABLE students (
     department VARCHAR(150) NOT NULL,
     programme VARCHAR(150) NOT NULL,
     college_id INT NOT NULL,
+    level SMALLINT UNSIGNED NOT NULL,
     photo_path VARCHAR(255) NOT NULL,           -- raw uploaded photo
     photo_processed_path VARCHAR(255) NULL,     -- optimized photo, filled by preprocessing step
     validity_start YEAR NOT NULL,

@@ -10,7 +10,7 @@
    ```
    mysql -u root -p < schema.sql
    ```
-3. Edit `config.php` with your real DB credentials and confirm
+3. Edit `include/config.php` with your real DB credentials and confirm
    `CARD_WIDTH_MM` / `CARD_HEIGHT_MM` match the actual card stock.
 4. Confirm the image paths in the `colleges` table point to files under
    `/assets/images/`.
@@ -20,7 +20,7 @@
 ## Generating a batch
 
 ```
-php generate_batch.php <college_id>
+php biometric/generate_batch.php <college_id>
 ```
 
 This will:
@@ -76,12 +76,12 @@ ID remains the underlying record key:
   is YMCKOK (has a dedicated second black panel), a genuinely
   monochrome back side can print on the K-only panel instead of
   a full color pass. Do not add any color styling to
-  `templates/back/shared_back.php`.
+  `assets/idcardtemplates/back/shared_back.php`.
 
-- **Front layout is fully shared** (`templates/front/shared_front.php`).
+- **Front layout is fully shared** (`assets/idcardtemplates/front/shared_front.php`).
    `primary_color` and `logo_path` are loaded from the college record. Adding
   a new college is a single row insert, no new file. If a college's
-  layout ever genuinely diverges, add `templates/front/{template_key}.php`
+  layout ever genuinely diverges, add `assets/idcardtemplates/front/{template_key}.php`
   and it overrides the shared template automatically for that college
   only, nothing else changes.
 
