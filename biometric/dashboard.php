@@ -4,6 +4,7 @@ require __DIR__ . '/../include/config.php';
 require __DIR__ . '/../class/Database.php';
 
 $section = filter_input(INPUT_GET, 'section', FILTER_UNSAFE_RAW) ?: '';
+$isAwaitingPrint = $section === 'awaiting-print';
 $isSelectivePrinting = $section === 'selective-printing';
 $isPermanentId = $section === 'permanent-id' || $section === '';
 $isTemporaryId = $section === 'temporary-id';
@@ -35,6 +36,12 @@ $reportFromInput = trim((string) (filter_input(INPUT_GET, 'report_from', FILTER_
 $reportToInput = trim((string) (filter_input(INPUT_GET, 'report_to', FILTER_UNSAFE_RAW) ?: ''));
 $reportFrom = '';
 $reportTo = '';
+$awaitingPrintSearch = trim((string) (filter_input(INPUT_GET, 'awaiting_print_search', FILTER_UNSAFE_RAW) ?: ''));
+$awaitingPrintApplications = [];
+$awaitingPrintError = '';
+$awaitingPrintMessage = '';
+$batchPrintError = '';
+$batchPrintMessage = '';
 
 foreach ([['input' => $reportFromInput, 'output' => 'reportFrom'], ['input' => $reportToInput, 'output' => 'reportTo']] as $reportDate) {
     if ($reportDate['input'] === '') {
@@ -86,6 +93,35 @@ if ($isSelectivePrinting) {
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'confirm-batch-printed') {
+    try {
+        $database = new Database();
+        $batchId = filter_input(INPUT_POST, 'batch_id', FILTER_VALIDATE_INT);
+        $referenceNumbers = isset($_POST['reference_numbers']) && is_array($_POST['reference_numbers'])
+            ? $_POST['reference_numbers']
+            : [];
+
+        if (!$batchId || !$database->markBatchAsPrinted($batchId)) {
+            $batchPrintError = 'This batch is not available for print confirmation.';
+        } else {
+            $applicationCount = $database->markApplicationsAsPrinted($referenceNumbers, 'local');
+            $batchPrintMessage = 'Batch confirmed as physically printed.' . ($applicationCount > 0 ? ' ' . $applicationCount . ' application(s) moved to printed.' : '');
+        }
+    } catch (Throwable $exception) {
+        $batchPrintError = 'Unable to confirm the batch as printed.';
+    }
+}
+
+if ($isAwaitingPrint) {
+    try {
+        $database = new Database();
+
+        $awaitingPrintApplications = $database->getAwaitingPrintApplications($awaitingPrintSearch);
+    } catch (Throwable $exception) {
+        $awaitingPrintError = 'Unable to load the awaiting-print queue right now.';
+    }
+}
+
 if ($isReport) {
     try {
         $database = new Database();
@@ -109,6 +145,7 @@ $menuGroups = [
         'label' => 'Biometric',
         'expanded' => true,
         'items' => [
+            ['label' => 'Awaiting Printing', 'active' => $isAwaitingPrint, 'children' => [], 'href' => 'dashboard.php?section=awaiting-print'],
             ['label' => 'Temporary ID card', 'active' => $isTemporaryId, 'children' => [], 'href' => 'dashboard.php?section=temporary-id'],
             ['label' => 'Permanent ID card', 'active' => $isPermanentId, 'children' => [], 'href' => 'dashboard.php?section=permanent-id'],
             ['label' => 'Selective Printing', 'active' => $isSelectivePrinting, 'children' => [], 'href' => 'dashboard.php?section=selective-printing'],
@@ -864,14 +901,20 @@ $menuGroups = [
         }
 
         .selection-actions {
+            display: flex;
+            gap: 8px;
             padding: 10px 12px;
             border-top: 1px solid var(--field-line);
         }
 
         .selection-actions .btn {
-            width: 100%;
+            flex: 1;
+            width: auto;
             min-width: 0;
             height: 38px;
+            padding: 0 8px;
+            font-size: 0.84rem;
+            white-space: nowrap;
         }
 
         .empty-results {
@@ -1124,7 +1167,93 @@ $menuGroups = [
                 </div>
             </header>
 
-            <?php if ($isSelectivePrinting): ?>
+            <?php if ($batchPrintMessage !== ''): ?>
+                <script>window.alert(<?php echo json_encode($batchPrintMessage); ?>);</script>
+            <?php endif; ?>
+            <?php if ($batchPrintError !== ''): ?>
+                <div class="status-message error"><?php echo htmlspecialchars($batchPrintError); ?></div>
+            <?php endif; ?>
+
+            <?php if ($isAwaitingPrint): ?>
+                <section class="page" aria-labelledby="page-title">
+                    <div class="crumbs" aria-label="Breadcrumb">
+                        <span>Home</span>
+                        <span class="sep">›</span>
+                        <span>Biometric</span>
+                        <span class="sep">›</span>
+                        <span>Awaiting Printing</span>
+                    </div>
+
+                    <h1 id="page-title">Awaiting Printing</h1>
+                    <p class="subtitle">Paid ID-card applications waiting to be physically printed.</p>
+
+                    <form class="report-toolbar" method="get" action="dashboard.php">
+                        <input type="hidden" name="section" value="awaiting-print">
+                        <label>Search queue
+                            <input type="search" name="awaiting_print_search" value="<?php echo htmlspecialchars($awaitingPrintSearch); ?>" placeholder="Name, matric number, reference, or programme">
+                        </label>
+                        <button class="btn primary" type="submit">Search</button>
+                    </form>
+
+                    <?php if ($awaitingPrintMessage !== ''): ?>
+                        <div class="status-message"><?php echo htmlspecialchars($awaitingPrintMessage); ?></div>
+                    <?php endif; ?>
+                    <?php if ($awaitingPrintError !== ''): ?>
+                        <div class="status-message error"><?php echo htmlspecialchars($awaitingPrintError); ?></div>
+                    <?php endif; ?>
+
+                    <?php if (empty($awaitingPrintApplications)): ?>
+                        <div class="preview-box">
+                            <div class="preview-message">No paid applications are awaiting printing.</div>
+                        </div>
+                    <?php else: ?>
+                        <form id="awaitingPrintForm" method="post" action="dashboard.php?section=awaiting-print<?php echo $awaitingPrintSearch !== '' ? '&amp;awaiting_print_search=' . rawurlencode($awaitingPrintSearch) : ''; ?>">
+                            <div class="report-table-wrap">
+                                <table class="report-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Select</th>
+                                            <th>Reference</th>
+                                            <th>Student</th>
+                                            <th>Programme / Department</th>
+                                            <th>Application type</th>
+                                            <th>Submitted</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php foreach ($awaitingPrintApplications as $application): ?>
+                                        <?php $canGenerateCard = !empty($application['student_id']) && $application['student_status'] === 'active'; ?>
+                                        <tr>
+                                            <td><input type="checkbox" name="reference_numbers[]" value="<?php echo htmlspecialchars($application['referencenumber']); ?>" data-student-id="<?php echo (int) $application['student_id']; ?>" <?php echo $canGenerateCard ? '' : 'disabled'; ?> aria-label="Select <?php echo htmlspecialchars($application['referencenumber']); ?>"></td>
+                                            <td><strong><?php echo htmlspecialchars($application['referencenumber']); ?></strong></td>
+                                            <td><?php echo htmlspecialchars($application['applicant_name'] ?: $application['matricnumber']); ?><br><small><?php echo htmlspecialchars($application['matricnumber']); ?></small></td>
+                                            <td><?php echo htmlspecialchars($application['programme'] ?: ($application['department'] ?: 'Not available')); ?><?php if (!$canGenerateCard): ?><br><small>Matching active student record required for batch generation.</small><?php endif; ?></td>
+                                            <td><?php echo htmlspecialchars(ucfirst($application['applicationtype'])); ?></td>
+                                            <td><?php echo htmlspecialchars((new DateTime($application['createdat']))->format('d/m/Y H:i')); ?></td>
+                                            <td class="report-status">Awaiting print</td>
+                                            <td hidden>
+                                                    <span aria-hidden="true"> · </span>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="action-row">
+                                <button class="btn primary" type="submit" name="preview_action" value="preview-cards">Preview Cards</button>
+                                <button class="btn secondary confirm-batch-print" type="button" disabled>Confirm print</button>
+                            </div>
+                        </form>
+                        <div class="preview-box" aria-live="polite">
+                            <div class="preview-inner" id="awaitingPrintPreviewState">
+                                <div class="placeholder-icon" aria-hidden="true"></div>
+                                <div class="preview-message">Select eligible applications, then choose Preview Cards to generate their ID-card batch.</div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </section>
+            <?php elseif ($isSelectivePrinting): ?>
                 <section class="page" id="selective-printing" aria-labelledby="page-title">
                     <div class="crumbs" aria-label="Breadcrumb">
                         <span>Home</span>
@@ -1171,6 +1300,7 @@ $menuGroups = [
                                 <div class="selection-actions">
                                     <input type="hidden" name="preview" value="1">
                                     <button type="submit" class="btn primary" formaction="generate_batch.php" formmethod="post">Preview Cards</button>
+                                    <button type="button" class="btn secondary confirm-batch-print" disabled>Confirm print</button>
                                 </div>
                             <?php endif; ?>
                         </form>
@@ -1254,22 +1384,23 @@ $menuGroups = [
                                 Select a college to load students for that college.
                             <?php endif; ?>
                         </div>
-                        <?php if ($selectedCollegeId > 0 && $selectedProgrammeId > 0 && $selectedLevel > 0 && $studentCount > 0): ?>
-                            <div class="action-row">
-                                <a class="btn primary" href="generate_batch.php?college_id=<?php echo (int) $selectedCollegeId; ?>&amp;programme_id=<?php echo (int) $selectedProgrammeId; ?>&amp;level=<?php echo (int) $selectedLevel; ?><?php echo $isTemporaryId ? '&amp;temporary=1' : ''; ?>">Download PDF</a>
-                                <a class="btn secondary" href="generate_batch.php?college_id=<?php echo (int) $selectedCollegeId; ?>&amp;programme_id=<?php echo (int) $selectedProgrammeId; ?>&amp;level=<?php echo (int) $selectedLevel; ?>&amp;inline=1<?php echo $isTemporaryId ? '&amp;temporary=1' : ''; ?>" target="_blank" rel="noopener">Open / Print PDF</a>
-                            </div>
-                        <?php endif; ?>
                     </form>
+                    <?php if ($selectedCollegeId > 0 && $selectedProgrammeId > 0 && $selectedLevel > 0 && $studentCount > 0): ?>
+                        <form id="collegePrintForm" method="post" action="generate_batch.php" class="action-row">
+                            <input type="hidden" name="college_id" value="<?php echo (int) $selectedCollegeId; ?>">
+                            <input type="hidden" name="programme_id" value="<?php echo (int) $selectedProgrammeId; ?>">
+                            <input type="hidden" name="level" value="<?php echo (int) $selectedLevel; ?>">
+                            <input type="hidden" name="temporary" value="<?php echo $isTemporaryId ? '1' : '0'; ?>">
+                            <input type="hidden" name="generated_by" value="<?php echo $isTemporaryId ? 'temporary' : 'permanent'; ?>">
+                            <input type="hidden" name="preview" value="1">
+                            <button class="btn primary" type="submit">Preview Cards</button>
+                            <button class="btn secondary confirm-batch-print" type="button" disabled>Confirm print</button>
+                        </form>
+                    <?php endif; ?>
                     <div class="preview-box" aria-live="polite">
                         <div class="preview-inner" id="previewState">
-                            <?php if ($selectedCollegeId > 0 && $selectedProgrammeId > 0 && $selectedLevel > 0 && $studentCount > 0): ?>
-                                <iframe class="pdf-preview-frame" title="ID card PDF preview" src="generate_batch.php?college_id=<?php echo (int) $selectedCollegeId; ?>&amp;programme_id=<?php echo (int) $selectedProgrammeId; ?>&amp;level=<?php echo (int) $selectedLevel; ?>&amp;inline=1<?php echo $isTemporaryId ? '&amp;temporary=1' : ''; ?>"></iframe>
-                                <p class="pdf-preview-note">Use the PDF viewer toolbar to scroll, print, or download this preview.</p>
-                            <?php else: ?>
-                                <div class="placeholder-icon" aria-hidden="true"></div>
-                                <div class="preview-message">Select a college, programme, and level to load and preview students.</div>
-                            <?php endif; ?>
+                            <div class="placeholder-icon" aria-hidden="true"></div>
+                            <div class="preview-message"><?php echo $studentCount > 0 ? 'Choose Preview Cards to create a print-ready batch.' : 'Select a college, programme, and level to load students.'; ?></div>
                         </div>
                     </div>
                 </section>
@@ -1328,7 +1459,7 @@ $menuGroups = [
                     <div class="report-summary">
                         <div class="report-stat"><strong><?php echo $reportBatchCount; ?></strong><span>Batches</span></div>
                         <div class="report-stat"><strong><?php echo $reportCardCount; ?></strong><span>Cards requested</span></div>
-                        <div class="report-stat"><strong><?php echo $reportSuccessCount; ?></strong><span>Cards completed</span></div>
+                        <div class="report-stat"><strong><?php echo $reportSuccessCount; ?></strong><span>Cards generated</span></div>
                         <div class="report-stat"><strong><?php echo $reportFailureCount; ?></strong><span>Student failures</span></div>
                     </div>
 
@@ -1347,13 +1478,21 @@ $menuGroups = [
                                         <th>Cards</th>
                                         <th>Success</th>
                                         <th>Failed</th>
-                                        <th>Status</th>
+                                        <th>Generation</th>
+                                        <th>Physical print</th>
                                         <th>PDF</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($reportRows as $row): ?>
-                                        <?php $referencePrefix = $row['generated_by'] === 'selective' ? 'SEL' : ($row['college_code'] ?: 'BATCH'); ?>
+                                        <?php
+                                        $referencePrefix = match ($row['generated_by']) {
+                                            'selective' => 'SEL',
+                                            'awaiting-print' => 'AWT',
+                                            'temporary' => 'TMP',
+                                            default => $row['college_code'] ?: 'BATCH',
+                                        };
+                                        ?>
                                         <tr>
                                             <td><strong><?php echo htmlspecialchars($referencePrefix . '/' . str_pad((string) $row['id'], 3, '0', STR_PAD_LEFT)); ?></strong></td>
                                             <td><?php echo htmlspecialchars((new DateTime($row['created_at']))->format('d/m/Y H:i')); ?></td>
@@ -1362,6 +1501,7 @@ $menuGroups = [
                                             <td><?php echo (int) $row['success_count']; ?></td>
                                             <td><?php echo (int) $row['failure_count']; ?></td>
                                             <td class="report-status <?php echo htmlspecialchars($row['status']); ?>"><?php echo htmlspecialchars($row['status']); ?></td>
+                                            <td class="report-status <?php echo $row['print_status'] === 'printed' ? 'completed' : ''; ?>"><?php echo htmlspecialchars(str_replace('_', ' ', $row['print_status'])); ?></td>
                                             <td><?php if (is_file($row['pdf_path'])): ?><a class="report-link" href="../output/<?php echo rawurlencode(basename($row['pdf_path'])); ?>" target="_blank" rel="noopener">Open PDF</a><?php else: ?>Unavailable<?php endif; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -1375,6 +1515,57 @@ $menuGroups = [
     </div>
 
     <script>
+        const batchConfirmationAction = <?php echo json_encode('dashboard.php?section=' . ($section !== '' ? $section : 'permanent-id')); ?>;
+        let pendingBatchPrint = null;
+
+        function setPendingBatchPrint(batchId, referenceNumbers) {
+            if (!batchId) {
+                return;
+            }
+
+            pendingBatchPrint = {
+                batchId: batchId,
+                referenceNumbers: referenceNumbers || []
+            };
+            document.querySelectorAll('.confirm-batch-print').forEach(function(button) {
+                button.disabled = false;
+            });
+        }
+
+        document.addEventListener('click', function(event) {
+            const button = event.target.closest('.confirm-batch-print');
+            if (!button || !pendingBatchPrint) {
+                return;
+            }
+
+            if (!window.confirm('Are you sure you have physically printed these cards?')) {
+                return;
+            }
+
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.action = batchConfirmationAction;
+
+            [['action', 'confirm-batch-printed'], ['batch_id', String(pendingBatchPrint.batchId)]].forEach(function(field) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = field[0];
+                input.value = field[1];
+                form.appendChild(input);
+            });
+
+            pendingBatchPrint.referenceNumbers.forEach(function(referenceNumber) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'reference_numbers[]';
+                input.value = referenceNumber;
+                form.appendChild(input);
+            });
+
+            document.body.appendChild(form);
+            form.submit();
+        });
+
         document.querySelectorAll('[data-nav-toggle]').forEach(function(toggle) {
             function toggleNavigation(event) {
                 if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') {
@@ -1462,12 +1653,113 @@ $menuGroups = [
                         previewState.innerHTML = '<iframe class="selective-preview-frame" title="Selected ID card PDF preview" src="' + viewerUrl + '"></iframe>' +
                             '<a class="preview-download" href="' + data.pdf_url + '" download="' + data.download_name + '">Download PDF</a>' +
                             '<a class="preview-open" href="' + viewerUrl + '" target="_blank" rel="noopener">Open full viewer</a>';
+                        setPendingBatchPrint(data.batch_id, []);
                     })
                     .catch(function(error) {
                         previewState.innerHTML = '<div class="preview-message">' + error.message + '</div>';
                     })
                     .finally(function() {
                         generateButton.disabled = selectionForm.querySelectorAll('[data-student-row]').length === 0;
+                    });
+            });
+        })();
+
+        (function() {
+            const awaitingPrintForm = document.getElementById('awaitingPrintForm');
+            if (!awaitingPrintForm) {
+                return;
+            }
+
+            awaitingPrintForm.addEventListener('submit', function(event) {
+                const submitter = event.submitter;
+                if (!submitter || submitter.value !== 'preview-cards') {
+                    return;
+                }
+
+                event.preventDefault();
+                const selectedInputs = Array.from(awaitingPrintForm.querySelectorAll('input[name="reference_numbers[]"]:checked'));
+                const studentIds = selectedInputs
+                    .map(function(input) { return input.dataset.studentId; })
+                    .filter(function(studentId) { return studentId && studentId !== '0'; });
+                const previewState = document.getElementById('awaitingPrintPreviewState');
+
+                if (!studentIds.length) {
+                    previewState.innerHTML = '<div class="preview-message">Select at least one application with a matching active student record.</div>';
+                    return;
+                }
+
+                submitter.disabled = true;
+                previewState.innerHTML = '<div class="preview-message">Generating selected ID cards...</div>';
+
+                const requestData = new FormData();
+                studentIds.forEach(function(studentId) {
+                    requestData.append('student_ids[]', studentId);
+                });
+                requestData.append('preview', '1');
+                requestData.append('generated_by', 'awaiting-print');
+
+                fetch('generate_batch.php', {
+                        method: 'POST',
+                        body: requestData
+                    })
+                    .then(function(response) {
+                        if (!response.ok) {
+                            throw new Error('Unable to generate the selected cards.');
+                        }
+                        return response.json();
+                    })
+                    .then(function(data) {
+                        const viewerUrl = data.pdf_url + '#toolbar=1&navpanes=0&scrollbar=1';
+                        previewState.innerHTML = '<iframe class="selective-preview-frame" title="Awaiting-print ID card PDF preview" src="' + viewerUrl + '"></iframe>' +
+                            '<a class="preview-download" href="' + data.pdf_url + '" download="' + data.download_name + '">Download PDF</a>' +
+                            '<a class="preview-open" href="' + viewerUrl + '" target="_blank" rel="noopener">Open full viewer</a>';
+                        setPendingBatchPrint(data.batch_id, selectedInputs.map(function(input) { return input.value; }));
+                    })
+                    .catch(function(error) {
+                        previewState.innerHTML = '<div class="preview-message">' + error.message + '</div>';
+                    })
+                    .finally(function() {
+                        submitter.disabled = false;
+                    });
+            });
+        })();
+
+        (function() {
+            const collegePrintForm = document.getElementById('collegePrintForm');
+            if (!collegePrintForm) {
+                return;
+            }
+
+            collegePrintForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+
+                const previewState = document.getElementById('previewState');
+                const generateButton = collegePrintForm.querySelector('[type="submit"]');
+                generateButton.disabled = true;
+                previewState.innerHTML = '<div class="preview-message">Generating the selected ID-card batch...</div>';
+
+                fetch(collegePrintForm.action, {
+                        method: 'POST',
+                        body: new FormData(collegePrintForm)
+                    })
+                    .then(function(response) {
+                        if (!response.ok) {
+                            throw new Error('Unable to generate the selected cards.');
+                        }
+                        return response.json();
+                    })
+                    .then(function(data) {
+                        const viewerUrl = data.pdf_url + '#toolbar=1&navpanes=0&scrollbar=1';
+                        previewState.innerHTML = '<iframe class="pdf-preview-frame" title="ID card PDF preview" src="' + viewerUrl + '"></iframe>' +
+                            '<a class="preview-download" href="' + data.pdf_url + '" download="' + data.download_name + '">Download PDF</a>' +
+                            '<a class="preview-open" href="' + viewerUrl + '" target="_blank" rel="noopener">Open full viewer</a>';
+                        setPendingBatchPrint(data.batch_id, []);
+                    })
+                    .catch(function(error) {
+                        previewState.innerHTML = '<div class="preview-message">' + error.message + '</div>';
+                    })
+                    .finally(function() {
+                        generateButton.disabled = false;
                     });
             });
         })();

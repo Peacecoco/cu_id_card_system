@@ -16,21 +16,28 @@ require __DIR__ . '/../class/PhotoProcessor.php';
 require __DIR__ . '/../class/Renderer.php';
 
 $isCli = PHP_SAPI === 'cli';
+$request = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
 $collegeId = $isCli
     ? (isset($argv[1]) ? (int) $argv[1] : null)
-    : (isset($_GET['college_id']) ? (int) $_GET['college_id'] : null);
+    : (isset($request['college_id']) ? (int) $request['college_id'] : null);
 $level = $isCli
     ? (isset($argv[2]) ? (int) $argv[2] : null)
-    : (isset($_GET['level']) ? (int) $_GET['level'] : null);
+    : (isset($request['level']) ? (int) $request['level'] : null);
 $programmeId = $isCli
     ? (isset($argv[3]) ? (int) $argv[3] : null)
-    : (isset($_GET['programme_id']) ? (int) $_GET['programme_id'] : null);
+    : (isset($request['programme_id']) ? (int) $request['programme_id'] : null);
 $studentIds = !$isCli && isset($_POST['student_ids']) && is_array($_POST['student_ids'])
     ? $_POST['student_ids']
     : [];
 $preview = !$isCli && isset($_POST['preview']) && $_POST['preview'] === '1';
 $inline = !$isCli && isset($_GET['inline']) && $_GET['inline'] === '1';
-$temporary = !$isCli && isset($_GET['temporary']) && $_GET['temporary'] === '1';
+$temporary = !$isCli && isset($request['temporary']) && $request['temporary'] === '1';
+$generatedByInput = !$isCli && isset($_POST['generated_by']) && is_string($_POST['generated_by'])
+    ? $_POST['generated_by']
+    : null;
+$generatedBy = in_array($generatedByInput, ['selective', 'awaiting-print', 'temporary', 'permanent'], true)
+    ? $generatedByInput
+    : null;
 
 if (!$collegeId && empty($studentIds)) {
     $message = $isCli
@@ -71,8 +78,8 @@ try {
     // Step 2: render the batch PDF
     $renderer = new Renderer($db);
     $result = empty($studentIds)
-        ? $renderer->generateCollegeBatch($collegeId, generatedBy: $isCli ? 'cli' : 'web', temporary: $temporary, level: $level, programmeId: $programmeId)
-        : $renderer->generateStudentsBatch($students, generatedBy: 'selective');
+        ? $renderer->generateCollegeBatch($collegeId, generatedBy: $isCli ? 'cli' : ($generatedBy ?: 'web'), temporary: $temporary, level: $level, programmeId: $programmeId)
+        : $renderer->generateStudentsBatch($students, generatedBy: $generatedBy ?: 'selective');
 
     if ($isCli) {
         echo "\nBatch complete.\n";
@@ -101,6 +108,7 @@ try {
         echo json_encode([
             'pdf_url' => $pdfUrl,
             'download_name' => $downloadName,
+            'batch_id' => $result['batch_id'],
             'success_count' => $result['success_count'],
         ]);
         exit(0);

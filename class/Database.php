@@ -117,6 +117,68 @@ class Database
         $stmt->execute([$batchId]);
     }
 
+    public function markBatchAsPrinted(int $batchId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE id_card_batches
+             SET print_status = 'printed', print_method = 'local', printed_at = NOW()
+             WHERE id = ? AND status = 'completed' AND print_status = 'awaiting_print'"
+        );
+        $stmt->execute([$batchId]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * The application workflow owns the physical-print queue. This mirrors the
+     * Full ID Card Module: a paid application awaits printing until an officer
+     * explicitly moves it to printed.
+     */
+    public function getAwaitingPrintApplications(string $searchTerm = ''): array
+    {
+        $query = "SELECT a.applicationid, a.referencenumber, a.matricnumber,
+                         a.applicationtype, a.status, a.photopath, a.createdat,
+                         s.id AS student_id, s.status AS student_status,
+                         s.full_name AS applicant_name, s.department, s.programme
+                  FROM idcardapplications a
+                  LEFT JOIN students s ON s.matric_no = a.matricnumber
+                  WHERE a.status = 'paid'";
+        $parameters = [];
+
+        if ($searchTerm !== '') {
+            $query .= ' AND (a.referencenumber LIKE ? OR a.matricnumber LIKE ? OR s.full_name LIKE ? OR s.department LIKE ? OR s.programme LIKE ?)';
+            $term = '%' . $searchTerm . '%';
+            $parameters = [$term, $term, $term, $term, $term];
+        }
+
+        $query .= ' ORDER BY a.createdat DESC, a.applicationid DESC';
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute($parameters);
+        return $stmt->fetchAll();
+    }
+
+    public function markApplicationsAsPrinted(array $referenceNumbers, string $printMethod): int
+    {
+        if (!in_array($printMethod, ['local', 'download'], true)) {
+            throw new InvalidArgumentException('Invalid print method.');
+        }
+
+        $referenceNumbers = array_values(array_unique(array_filter(
+            array_map(static fn($reference): string => trim((string) $reference), $referenceNumbers)
+        )));
+        if (empty($referenceNumbers)) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($referenceNumbers), '?'));
+        $stmt = $this->pdo->prepare(
+            "UPDATE idcardapplications
+             SET status = 'printed', printmethod = ?, printedat = NOW(), updatedat = NOW()
+             WHERE status = 'paid' AND referencenumber IN ({$placeholders})"
+        );
+        $stmt->execute(array_merge([$printMethod], $referenceNumbers));
+        return $stmt->rowCount();
+    }
+
     public function failBatch(int $batchId): void
     {
         $stmt = $this->pdo->prepare('UPDATE id_card_batches SET status = "failed" WHERE id = ?');
@@ -156,7 +218,7 @@ class Database
 
         $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
         $stmt = $this->pdo->prepare(
-            "SELECT b.id, b.generated_by, b.student_count, b.pdf_path, b.status, b.created_at,
+            "SELECT b.id, b.generated_by, b.student_count, b.pdf_path, b.status, b.print_status, b.printed_at, b.created_at,
                     c.name AS college_name, c.code AS college_code,
                     SUM(i.status = 'success') AS success_count,
                     SUM(i.status = 'failed') AS failure_count
@@ -164,7 +226,7 @@ class Database
              LEFT JOIN colleges c ON c.id = b.college_id
              LEFT JOIN id_card_batch_items i ON i.batch_id = b.id
              {$where}
-             GROUP BY b.id, b.generated_by, b.student_count, b.pdf_path, b.status, b.created_at, c.name, c.code
+             GROUP BY b.id, b.generated_by, b.student_count, b.pdf_path, b.status, b.print_status, b.printed_at, b.created_at, c.name, c.code
              ORDER BY b.created_at DESC, b.id DESC"
         );
         $stmt->execute($parameters);

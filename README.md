@@ -10,10 +10,11 @@
    ```
 3. Create the `idcard_system` database, then import the complete supplied dump.
    Do not use `schema.sql`; it is a simplified reference schema and does not
-   include all tables and data used by the dashboard.
+   include all tables and data used by the dashboard. Use the latest complete
+   dump, which includes the ID-card application and physical-print workflow.
    ```bash
    mysql -u root -p -e "CREATE DATABASE idcard_system CHARACTER SET utf8mb4"
-   mysql -u root -p idcard_system < "idcard_system (3).sql"
+   mysql -u root -p idcard_system < "idcard_system (4).sql"
    ```
 4. Edit `include/config.php` with your real DB credentials and confirm
    `CARD_WIDTH_MM` / `CARD_HEIGHT_MM` match the actual card stock.
