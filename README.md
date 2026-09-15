@@ -1,4 +1,4 @@
-﻿# ID Card Management and Printing System
+# ID Card Management and Printing System
 
 PHP/mPDF application for permanent, temporary, and selectively chosen student ID cards. It prepares photos, creates front/back PDF batches, logs generation results, and records physical-print confirmation.
 
@@ -20,7 +20,7 @@ The projects share the `idcard_system` database. The implemented replacement pat
 4. Create `output/` and make it writable. Allow PHP to create/write `tmp/mpdf/` and `uploads/photos_processed/`.
 5. Supply student JPEG/PNG photos and valid `students.photo_path` values. Existing processed photos are reused when present. Paths must resolve from the generator; absolute filesystem paths avoid working-directory ambiguity. Imported paths may need adjustment for this installation.
 6. Check `colleges.logo_path` and the branding/signature/barcode assets in `assets/images/`. College logo paths are resolved relative to this project root.
-7. Keep all three folders as siblings under the PHP server document root. For this workspace, open `http://localhost/REFACTOR/idcard-system/biometric/dashboard.php`.
+7. Keep all three folders as siblings under the PHP server document root. For this workspace, open `http://localhost/REFACTOR/idcard-system/biometric/permanent-id.php`.
 
 ### Database setup
 
@@ -38,15 +38,17 @@ No consolidated migration/bootstrap script is currently supplied.
 
 ## Dashboard
 
-All sections use `biometric/dashboard.php`:
+Each navigation item has its own PHP page under `biometric/`:
 
-| Section query | Purpose |
+| Page | Purpose |
 | --- | --- |
-| `?section=permanent-id` (default) | Select college, programme, and level; generate permanent cards. |
-| `?section=temporary-id` | Same selection, with matriculation number omitted and a temporary-ID label. |
-| `?section=selective-printing` | Search active students by name/matriculation number, remove unwanted selections, and generate cards. Search returns up to 50 matches. |
-| `?section=awaiting-print` | Search paid replacement applications; generate for those with a matching active student. |
-| `?section=reports` | Filter by college, generation status, and date range; inspect counts, print status, and PDFs. Dates use `DD/MM/YYYY`. |
+| `permanent-id.php` (default) | Select college, programme, and level; generate permanent cards. |
+| `temporary-id.php` | Same selection, with matriculation number omitted and a temporary-ID label. |
+| `selective-printing.php` | Search active students by name/matriculation number, remove unwanted selections, and generate cards. Search returns up to 50 matches. |
+| `awaiting-printing.php` | Search paid replacement applications; generate for those with a matching active student. |
+| `reports.php` | Filter by college, generation status, and date range; inspect counts, print status, and PDFs. Dates use `DD/MM/YYYY`. |
+
+`dashboard.php` now redirects to permanent cards by default. Old section bookmarks redirect to their dedicated page and retain data filters; normal navigation and forms use only dedicated URLs. Search, selection IDs, college/programme/level, and report filters remain query data.
 
 Preview creates a real PDF and audit batch. Opening/downloading it does not confirm physical printing. After printing, the dashboard submits `action=confirm-batch-printed` and `batch_id`; replacement batches also submit selected `reference_numbers[]`. This records the batch as printed and moves supplied paid applications to `printed` with method `local`.
 
@@ -76,7 +78,10 @@ Web endpoint: `biometric/generate_batch.php`.
 
 | Path | Responsibility |
 | --- | --- |
-| `biometric/dashboard.php` | Selections, reports, print confirmation, HTML, CSS, and JavaScript. |
+| `biometric/dashboard.php` | Compatibility redirect to dedicated pages; preserves old bookmarks and POST bodies. |
+| `biometric/permanent-id.php`, `temporary-id.php`, `selective-printing.php`, `awaiting-printing.php`, `reports.php` | Dedicated navigation entry points, each loading its own data and view. |
+| `include/biometric/` | Shared bootstrap/print confirmation, header/footer, and extracted page data/views. Permanent and temporary generation share the college form. |
+| `assets/css/biometric.css`, `assets/js/` | Extracted dashboard styling, shared navigation/confirmation, and page-specific generation scripts. |
 | `biometric/generate_batch.php` | Web/CLI photo preparation and PDF generation. |
 | `class/Database.php` | Academic queries, paid queue, photo updates, batches, print states, and reports. |
 | `class/PhotoProcessor.php` | Center-crops JPEG/PNG photos to 260 × 307 px, adjusts brightness/contrast, and saves JPEG at quality 88. |
@@ -126,6 +131,6 @@ A black-looking PDF does not prove which ribbon panels a Magicard 300 driver use
 
 ## Verification and troubleshooting
 
-No project automated test suite is supplied. With development data, generate one permanent and one temporary card, inspect both PDF sides and images, generate a selective batch, and check report counts. Preview a paid replacement application and confirm it stays `paid` until physical-print confirmation.
+Navigation regression checks are available at [tests/navigation_smoke.py](../tests/navigation_smoke.py). Run `python tests/navigation_smoke.py` from REFACTOR with Apache/PHP running. They check page routes, assets, filters, and redirects without generating PDFs or changing application/payment records. With development data, generate one permanent and one temporary card, inspect both PDF sides and images, generate a selective batch, and check report counts. Preview a paid replacement application and confirm it stays `paid` until physical-print confirmation.
 
 Generation writes PDFs, photo paths, and audit records. Confirmation changes shared application states. For failures, check database tables/configuration, Composer autoload, GD, photo paths, branding assets, and write permissions. Resolve missing active-student matches before generating cards from the paid queue.

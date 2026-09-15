@@ -4,7 +4,7 @@
 
 The ID Card Management and Printing System produces permanent, temporary, and selectively chosen student ID cards as PDF batches. It obtains student records from MySQL, prepares passport photographs for print, renders a front and back card for each student, saves the PDF output, and creates a batch audit trail.
 
-The main application page is `biometric/dashboard.php`.
+The default page is `biometric/permanent-id.php`. Each navigation item has a dedicated PHP page; `biometric/dashboard.php` remains a compatibility redirect.
 
 ## End-to-End Workflow
 
@@ -30,7 +30,9 @@ Each student produces two PDF pages in the following order: front, back, front, 
 | `class/Database.php` | Database access for colleges, programmes, students, batches, audit records, and reports. |
 | `class/PhotoProcessor.php` | Crops, resizes, lightly normalizes, compresses, saves, and records print-ready student photos. |
 | `class/Renderer.php` | Loads templates and creates the PDF card pages and batch log records. |
-| `biometric/dashboard.php` | Main user interface for ID generation, selective printing, and reports. |
+| `biometric/` | Dedicated permanent, temporary, selective, awaiting-printing, and report pages. |
+| `include/biometric/` | Shared layout/bootstrap and page-specific data/views. |
+| `assets/css/biometric.css`, `assets/js/` | Shared styles and common/page-specific scripts. |
 | `biometric/generate_batch.php` | Web/CLI generation endpoint that orchestrates photo preparation and PDF production. |
 | `assets/idcardtemplates/` | Reusable front, back, header, middle, and footer card templates. |
 | `assets/images/` | University logo, Registrar signature/barcode, building image, and college visual assets. |
@@ -82,13 +84,13 @@ This is the default dashboard view.
 
 ### 2. Temporary ID Card Generation
 
-This view is reached through `dashboard.php?section=temporary-id`.
+This view is reached through `temporary-id.php`.
 
 The college, programme, and level selection process is identical to permanent card generation. The generator receives a temporary-card setting, which removes the matric-number line and adds a `TEMPORARY ID` label to the rendered front card.
 
 ### 3. Selective Printing
 
-This view is reached through `dashboard.php?section=selective-printing`.
+This view is reached through `selective-printing.php`.
 
 1. The administrator searches active students by name or matriculation number.
 2. Matching students are displayed in the selected-students area.
@@ -100,7 +102,7 @@ Selective batches use the `SEL` filename/reference prefix.
 
 ### 4. Reports and Audit
 
-This view is reached through `dashboard.php?section=reports`.
+This view is reached through `reports.php`.
 
 The administrator may filter batch history by college, generation status, and date range. The report displays the batch reference, date/time, college, cards requested, successful cards, failures, batch status, and a link to the stored PDF.
 
