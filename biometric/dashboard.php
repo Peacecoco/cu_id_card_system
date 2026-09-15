@@ -1212,7 +1212,7 @@ $menuGroups = [
                                 <table class="report-table">
                                     <thead>
                                         <tr>
-                                            <th>Select</th>
+                                            <th><label><input id="awaitingPrintSelectAll" type="checkbox" aria-label="Select all eligible applications"> Select all</label></th>
                                             <th>Reference</th>
                                             <th>Student</th>
                                             <th>Programme / Department</th>
@@ -1669,6 +1669,31 @@ $menuGroups = [
             if (!awaitingPrintForm) {
                 return;
             }
+
+            const selectAll = document.getElementById('awaitingPrintSelectAll');
+            const selectableInputs = Array.from(awaitingPrintForm.querySelectorAll('input[name="reference_numbers[]"]:not(:disabled)'));
+            const syncSelectAllState = function() {
+                if (!selectAll) {
+                    return;
+                }
+                const selectedCount = selectableInputs.filter(function(input) { return input.checked; }).length;
+                selectAll.checked = selectableInputs.length > 0 && selectedCount === selectableInputs.length;
+                selectAll.indeterminate = selectedCount > 0 && selectedCount < selectableInputs.length;
+            };
+
+            if (selectAll) {
+                selectAll.disabled = selectableInputs.length === 0;
+                selectAll.addEventListener('change', function() {
+                    selectableInputs.forEach(function(input) {
+                        input.checked = selectAll.checked;
+                    });
+                    syncSelectAllState();
+                });
+            }
+            selectableInputs.forEach(function(input) {
+                input.addEventListener('change', syncSelectAllState);
+            });
+            syncSelectAllState();
 
             awaitingPrintForm.addEventListener('submit', function(event) {
                 const submitter = event.submitter;
