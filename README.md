@@ -1,136 +1,90 @@
-# ID Card Management and Printing System
+﻿# ID Card Management and Printing System
 
-PHP/mPDF application for permanent, temporary, and selectively chosen student ID cards. It prepares photos, creates front/back PDF batches, logs generation results, and records physical-print confirmation.
+PHP/mPDF dashboard for ordinary permanent, temporary and selective cards, plus replacement printing and collection. Phase 4 integrates the shared lifecycle in `shared/lifecycle/`; Student Affairs and account-officer UI work is outside this phase.
 
-## Related projects
+## Setup and identity
 
-| Project | Responsibility |
+Use PHP 8.1+ with `pdo_mysql`, `gd`, `mbstring`, Composer dependencies and the Phase 2 database migration. Existing snapshots are reference imports, not upgrades for a live database. See [shared lifecycle setup](shared/lifecycle/README.md) and `database/migrate_phase2.php` before configuring a new database. Phase 4 adds no migration and does not rewrite historical records.
+
+The three projects share a database and remain sibling directories. Defaults are localhost / idcard_system / root / empty password; configure `CU_IDCARD_DB_HOST`, `CU_IDCARD_DB_NAME`, `CU_IDCARD_DB_USER`, `CU_IDCARD_DB_PASS` on the server. Defaults match the existing local installation; production credentials belong in server configuration.
+
+`include/session.php` resolves `$_SESSION['loginid']` using the Phase 2 `PortalSessionAdapter`. Set `CU_IDCARD_IDENTITY_RESOLVER` to a trusted PHP file returning a Closure which looks up that login in the real CU staff/role store and returns `CU\IdCard\Identity`. It must grant `id_card_officer` only to authorized officers. Browser actor/role fields are never used. The authoritative CU staff directory/session mapping has not been supplied; the default is fail-closed. Unauthenticated pages show the navigation shell without student queues or reports; generation, confirmation, collection and PDF reads reject access.
+
+For isolated local development only, set `CU_IDCARD_DEV_MODE=1` and `CU_IDCARD_DEV_ACTOR=<test officer identity>` in the server environment. The adapter accepts this only on loopback (or trusted CLI), only without a real login session and without a configured resolver. Never enable this mode on a production host. Session cookies use HttpOnly, SameSite=Lax and Secure under HTTPS. POST actions require a random, session/actor-bound CSRF token, sent by the dashboard in `X-CSRF-Token` or the confirmation form. Session locks are released before database/rendering work.
+
+CLI retains `php biometric/generate_batch.php <college_id> [level] [programme_id]`. It requires the same trusted identity configuration; with an external resolver set `CU_IDCARD_CLI_LOGIN` to the login to resolve. CLI has no browser CSRF requirement. PHP no longer reads a missing CLI REQUEST_METHOD.
+
+The local XAMPP PHP configuration has GD installed but disabled. Enable GD in the deployment PHP configuration before real rendering. Tests enable it per process with `-d extension=gd`; they do not edit global php.ini or restart Apache.
+
+## Pages and ordinary compatibility
+
+| Page under biometric/ | Purpose |
 | --- | --- |
-| [CU Student](../cu_student/README.md) | Replacement applications, status, invoices, and local payment recording. |
-| [CU Student Affairs](../cu_studentaffairs/README.md) | Review, rejection, fee approval, and payment deadlines. |
-| `idcard-system` | Paid replacement queue, card PDFs, print confirmation, and batch reports. |
+| permanent-id.php | College/programme/level selection and ordinary permanent cards. |
+| temporary-id.php | The same filters and existing temporary card template behavior. |
+| selective-printing.php | Name/matric search and selected active students. |
+| awaiting-printing.php | Eligible replacement applications, window filter and PDF preview. |
+| collection.php | Search printed replacement cards and confirm collection. |
+| reports.php | Existing college/status/date report, counts, PDF reads and recoverable physical confirmation. |
 
-The projects share the `idcard_system` database. The implemented replacement path is `submitted → awaitingpayment → paid → printed`, with rejection and payment-expiry branches. Later pickup/collection/closure statuses exist in the data model, but these three folders do not implement those actions.
+`dashboard.php` remains a compatibility redirect, including the new collection route. Filters survive redirects. Every navigation item still has its own page. Ordinary templates, 54 x 86 mm dimensions, front/back order, college branding, temporary labeling, filters and photo preparation are preserved. Selective rendering re-reads students after photo processing so it uses the freshly prepared photo. Random filename suffixes prevent batches generated in the same second from overwriting each other.
 
-## Setup
+Ordinary batches retain NULL application linkage and the guarded ordinary physical-confirmation method. They do not change replacement applications. The master photo processor still reuses existing processed photos and updates the processed path when preparing an ordinary student photo. Existing individual ordinary rendering failures retain their previous per-student behavior.
 
-1. Use PHP 8.1+, MySQL/MariaDB, Composer, and PHP extensions `pdo_mysql`, `gd`, and `mbstring`. Student uploads additionally need `fileinfo`.
-2. Run `composer install` from this folder. [composer.json](composer.json) requires `mpdf/mpdf` `^8.2`.
-3. Prepare the database below and edit [include/config.php](include/config.php). Configure the two sibling projects separately to use the same database.
-4. Create `output/` and make it writable. Allow PHP to create/write `tmp/mpdf/` and `uploads/photos_processed/`.
-5. Supply student JPEG/PNG photos and valid `students.photo_path` values. Existing processed photos are reused when present. Paths must resolve from the generator; absolute filesystem paths avoid working-directory ambiguity. Imported paths may need adjustment for this installation.
-6. Check `colleges.logo_path` and the branding/signature/barcode assets in `assets/images/`. College logo paths are resolved relative to this project root.
-7. Keep all three folders as siblings under the PHP server document root. For this workspace, open `http://localhost/REFACTOR/idcard-system/biometric/permanent-id.php`.
+## Replacement queue and timing
 
-### Database setup
+`Lifecycle::printingQueue` is authoritative. The query joins an active student by matric and requires all of:
 
-For a new development database, create `idcard_system` and import [idcard_system (4).sql](<idcard_system (4).sql>) through phpMyAdmin or the MySQL client. It includes academic tables, students, applications, batches, batch items, and physical-print columns. It also contains historical records and installation-specific paths.
+- `paymentstatus='paid'`, `status='paid'`, known `paidat <= NOW()`;
+- no printed or collected timestamp;
+- no row in `idcardrefunds`, regardless of refund stage;
+- default **After 72 Hours**: `DATE_ADD(paidat, INTERVAL 72 HOUR) <= NOW()`;
+- **Before 72 Hours**: `DATE_ADD(paidat, INTERVAL 72 HOUR) > NOW()`.
 
-Do not treat a full snapshot as a migration for an existing installation. `schema.sql` is a simplified reference missing tables required by the dashboard; `(3).sql` is an older snapshot.
+The five search predicates (reference, matric, name, department, programme) are ORed inside the eligibility predicate, with bound parameters. They never broaden the eligible dataset. Results order by paidat/applicationid. PHP and DB connections use Africa/Lagos / +01:00. Exactly 72 hours belongs only to After. The table displays Paid At and the deadline from shared `Rules::deadline`; no client countdown decides eligibility. A filter is submitted with Search. Generation revalidates the chosen window via `printingSelection` and `recordBatchItem`; crossing the boundary during generation can require refreshing and regenerating.
 
-**The `(4).sql` dump does not fully bootstrap the student/review/payment modules.** To enable the shared workflow:
+Unknown legacy payment information is never guessed. Legacy paid applications (`paymentstatus IS NULL`) are excluded from this queue and need explicit reconciliation outside Phase 4. The Phase 2 legacy Database methods remain restricted to legacy records for compatibility, but the dashboard no longer calls the browser-reference legacy update method. Unlinked historical awaiting-print batches cannot be confirmed through the replacement service. No paidat, payment status, event or batch linkage is fabricated for the seven historical applications.
 
-1. Bring across only the `idcardsettings` table definition, seed rows, indexes, and AUTO_INCREMENT statements from [Full_ID_Card_Module/idcarddb.sql](../Full_ID_Card_Module/idcarddb.sql). Do not import that entire separate application's database over the printing schema.
-2. Import [cu_student/database/payment_setup.sql](../cu_student/database/payment_setup.sql) into the shared database. It creates `paymentoptions` and `paymenttransactions`; re-running it also updates the seeded option configuration.
-3. Confirm active settings exist for `damaged` and `loststolen`. Fees, expiry/cooldown days, upload limits, and MIME allowlists are read from this table.
+## Generation, traceability and photo source
 
-No consolidated migration/bootstrap script is currently supplied.
+Web generation is POST-only, role-checked and CSRF-protected. Ordinary college/student-ID requests keep their existing modes. Replacement requests send `generated_by=awaiting-print`, `reference_numbers[]`, and `window=before|after`. Mixed college/student-ID/temporary parameters are rejected. Submitted references select applications; they never supply authoritative student IDs or actors.
 
-## Dashboard
+1. Shared `printingSelection` locks/revalidates each application and resolves its active student.
+2. Renderer creates a pending `awaiting-print` batch and uses the existing card templates.
+3. Replacement photo source is **idcardapplications.photopath**, copied from the paid checkout snapshot in Phase 3. It must be `uploads/idcard/<safe filename>.jpg|jpeg|png`, inside the trusted student upload root after realpath resolution. There is no master-photo fallback.
+4. GD prepares the image in `uploads/photos_processed/replacements/application-<applicationid>.jpg`. This separate directory cannot collide with the ordinary matric filename. Neither master photo column is changed.
+5. Each rendered result calls shared `recordBatchItem`, persisting batch_id, exact applicationid, resolved student_id and outcome. Eligibility is rechecked at recording time. A render/linkage failure marks the entire replacement batch failed and publishes no usable PDF. A failed result is recorded when the application still permits linkage; if a concurrent refund prevents even that write, the batch remains failed and the rejection is logged. Successful items already recorded in an aborted batch cannot be confirmed.
+6. Only after PDF output succeeds is generation marked completed. PDF generation, preview and download never mark an application printed.
 
-Each navigation item has its own PHP page under `biometric/`:
+Path overrides, useful for isolated tests: `CU_IDCARD_OUTPUT_PATH`, `CU_IDCARD_PROCESSED_PATH`, `CU_IDCARD_MPDF_PATH`, `CU_IDCARD_REPLACEMENT_PHOTOS_PATH`. The last defaults to sibling `cu_student/uploads/idcard`; configure it to match the student's upload override. Give the PHP account appropriate write/read permissions. Templates remain under assets/idcardtemplates.
 
-| Page | Purpose |
-| --- | --- |
-| `permanent-id.php` (default) | Select college, programme, and level; generate permanent cards. |
-| `temporary-id.php` | Same selection, with matriculation number omitted and a temporary-ID label. |
-| `selective-printing.php` | Search active students by name/matriculation number, remove unwanted selections, and generate cards. Search returns up to 50 matches. |
-| `awaiting-printing.php` | Search paid replacement applications; generate for those with a matching active student. |
-| `reports.php` | Filter by college, generation status, and date range; inspect counts, print status, and PDFs. Dates use `DD/MM/YYYY`. |
+`batch-pdf.php?batch_id=<id>` serves a completed batch after an officer-role check and validates its stored path is directly in the configured output directory. `&download=1` requests an attachment. All new previews/report links use this endpoint. Existing static output URLs are not revoked by Phase 4; deployment should keep PDF storage outside the public document root using the output override if access-controlled storage is required. Paths/SQL errors are logged server-side and are not returned as generation error details.
 
-`dashboard.php` now redirects to permanent cards by default. Old section bookmarks redirect to their dedicated page and retain data filters; normal navigation and forms use only dedicated URLs. Search, selection IDs, college/programme/level, and report filters remain query data.
+## Physical printing and concurrency
 
-Preview creates a real PDF and audit batch. Opening/downloading it does not confirm physical printing. After printing, the dashboard submits `action=confirm-batch-printed` and `batch_id`; replacement batches also submit selected `reference_numbers[]`. This records the batch as printed and moves supplied paid applications to `printed` with method `local`.
+The officer uses Confirm print after actually printing. Before showing the modal, `print-confirmation.php` reads the persisted batch and successful items; an unexpired refund window produces an explicit emergency warning that printing permanently removes refund eligibility. Cancel performs no transition. The officer can resume confirmation from Reports after navigating away. The backend accepts a batch ID and CSRF token, never a list of browser references to mark printed.
 
-Generation status (`pending`, `completed`, `failed`) and physical-print status (`awaiting_print`, `printed`) are separate. Report references use college prefixes or `SEL`, such as `ENG/001` and `SEL/003`.
+Shared `confirmPrinted` owns the transaction: locks completed/unprinted replacement batch, reads successful linked items, locks/re-reads applications, checks paid/unprinted/uncollected/no refund and student correspondence, updates each application to printed with printedat/printmethod, appends `card_printed` with trusted actor and batch metadata, then marks the batch physically printed. All changes commit together. No successful item is silently skipped. Failed/skipped-only or unlinked batches are rejected. One ineligible item rolls back every update and event. Duplicate confirmation is rejected.
 
-## Generator interface
+The existing shared application/refund locks resolve refund versus printing: refund commits first -> confirmation fails; print commits first -> refund fails. The rule also applies to emergency printing inside 72 hours. A stale PDF or warning cannot bypass the committing service. Transactions cannot prove a physical printer action; staff must confirm immediately after printing and recheck any conflict. No automated test submits a printer job.
 
-Run from this folder:
+## Collection and student history
+
+`Lifecycle::collectionQueue` requires printed status, paid payment, a printed timestamp, no collected timestamp and no refund record. Search is reference/matric/name within that dataset. The shared architecture adds collection data/view files and one navigation item. Confirm Collection opens a modal identifying the reference. POST calls `Lifecycle::collect`, which locks the application/refund, rechecks eligibility and atomically writes collected status, collectedat, collectedby and `card_collected`. Paid, failed, refunded, unknown legacy and duplicate collection transitions fail. Successful rows leave the queue.
+
+Student Phase 3 history already reads `idcardapplicationevents`; the actual printed and collected events appear there without another history implementation. No historical events are reconstructed.
+
+## Verification
+
+From REFACTOR, run:
 
 ```text
-php biometric/generate_batch.php <college_id>
-php biometric/generate_batch.php <college_id> <level> <programme_id>
+C:/xampp/php/php.exe tests/lifecycle_phase2.php
+python -B tests/student_phase3.py
+python -B tests/printing_phase4.py
+python -B tests/navigation_smoke.py
 ```
 
-CLI generates permanent cards, prints progress/results, and exits nonzero on fatal errors. The script currently reads `$_SERVER['REQUEST_METHOD']` before branching on request mode, so ordinary CLI execution may emit an undefined-key warning.
+Printing tests create a random disposable database, application snapshots, actual mPDF PDFs and processed photos; all are removed afterward. They hash live application/payment/refund/event/student/batch data before and after. Set `CU_PRINT_BROWSER_TEST=1` to additionally run the local Edge/CDP browser flow; screenshots go to tests/artifacts. The browser simulates database confirmations only. The navigation suite reads Apache pages; all mutations occur against isolated test servers/databases. See [Phase 4 report](PHASE4_REPORT.md) for tested results and the exact changed-file inventory.
 
-Web endpoint: `biometric/generate_batch.php`.
-
-- GET/POST: `college_id`, optional `level` and `programme_id`.
-- POST: `student_ids[]` selects active students instead of college filtering.
-- POST `preview=1`: returns JSON containing `pdf_url`, `download_name`, `batch_id`, and `success_count`.
-- GET `inline=1`: streams a PDF inline; otherwise a non-preview response is a PDF attachment.
-- `temporary=1`: enables temporary cards for college-based generation.
-- POST `generated_by`: accepts `selective`, `awaiting-print`, `temporary`, or `permanent` as a batch label.
-
-## Folder guide
-
-| Path | Responsibility |
-| --- | --- |
-| `biometric/dashboard.php` | Compatibility redirect to dedicated pages; preserves old bookmarks and POST bodies. |
-| `biometric/permanent-id.php`, `temporary-id.php`, `selective-printing.php`, `awaiting-printing.php`, `reports.php` | Dedicated navigation entry points, each loading its own data and view. |
-| `include/biometric/` | Shared bootstrap/print confirmation, header/footer, and extracted page data/views. Permanent and temporary generation share the college form. |
-| `assets/css/biometric.css`, `assets/js/` | Extracted dashboard styling, shared navigation/confirmation, and page-specific generation scripts. |
-| `biometric/generate_batch.php` | Web/CLI photo preparation and PDF generation. |
-| `class/Database.php` | Academic queries, paid queue, photo updates, batches, print states, and reports. |
-| `class/PhotoProcessor.php` | Center-crops JPEG/PNG photos to 260 × 307 px, adjusts brightness/contrast, and saves JPEG at quality 88. |
-| `class/Renderer.php` | Templates, front/back rendering, PDF output, and per-student audit logs. |
-| `include/config.php` | Database, paths, card/photo dimensions, and Windows-compatible mPDF asset URIs. |
-| `assets/idcardtemplates/front/shared_front.php` | Shared college-themed front. |
-| `assets/idcardtemplates/back/shared_back.php` | Shared monochrome back. |
-| `assets/idcardtemplates/partials/` | `header_logo.php`, `middle.php`, and `footer.php`. |
-| `assets/images/` | University/college branding, building photo, signature, and static barcode. |
-| `uploads/photos/` | Original student photos. |
-| `uploads/photos_processed/` | Generated print-ready photos. |
-| `output/` | Generated PDF batches. |
-| `tmp/mpdf/` | mPDF working files and cache. |
-| `vendor/` | Composer-managed dependencies. |
-| `schema.sql`, `idcard_system (3).sql`, `idcard_system (4).sql` | Reference schema and snapshots; see setup caveats. |
-| `ID_CARD_SYSTEM_WORKFLOW.md` | Earlier workflow overview; this README reflects current code where they differ. |
-
-## Rendering and print operation
-
-Card dimensions are configured as 54 × 86 mm with zero PDF margins. Template CSS also has fixed dimensions, so changing configuration alone may not resize every element.
-
-Fronts use the college's `primary_color` and `logo_path`. A template at `assets/idcardtemplates/front/{template_key}.php` overrides the shared front. The renderer supports additional college records, but the dashboard selector currently starts from a fixed set of four IDs.
-
-Each student renders front then back, repeated through the PDF. Per-student rendering failures are logged in `id_card_batch_items`; zero successful cards marks the batch failed. Photo preparation collects its own failures, and rendering can fall back to the original photo path.
-
-Keep the back template monochrome. Its barcode is a static image, not generated for each student. Individual card generation is available through selective printing.
-
-### Verifying monochrome back printing
-
-A black-looking PDF does not prove which ribbon panels a Magicard 300 driver uses. Verify using the actual printer, driver, and ribbon:
-
-1. Confirm installed ribbon type (YMCKO or YMCKOK), duplex page order, and card dimensions.
-2. Print a small front/back test batch.
-3. Check black-only/K-panel routing options and printer job information.
-4. If supported, print a back-only black test page.
-5. Compare ribbon usage before and after routing changes using the printer utility, counter, or physical panels.
-6. Repeat with equal card quantity/coverage and record usage and print quality.
-
-## Current integration limits
-
-- Authentication/authorization is absent and the dashboard user display is hard-coded.
-- Replacement previews use master `students.photo_path` / `photo_processed_path`. New application `photopath` values are not automatically promoted into the master record or used by generation.
-- Print confirmation trusts submitted references. No persisted application-to-batch mapping checks that every reference was successfully rendered; batch/application print updates are separate operations.
-- There is no master-photo upload endpoint here. `cu_student` handles replacement uploads.
-- Pickup scheduling, collection, and closure are not implemented here.
-- `include/config.php` enables displayed errors; deployment configuration still needs to be integrated with the host portal.
-
-## Verification and troubleshooting
-
-Navigation regression checks are available at [tests/navigation_smoke.py](../tests/navigation_smoke.py). Run `python tests/navigation_smoke.py` from REFACTOR with Apache/PHP running. They check page routes, assets, filters, and redirects without generating PDFs or changing application/payment records. With development data, generate one permanent and one temporary card, inspect both PDF sides and images, generate a selective batch, and check report counts. Preview a paid replacement application and confirm it stays `paid` until physical-print confirmation.
-
-Generation writes PDFs, photo paths, and audit records. Confirmation changes shared application states. For failures, check database tables/configuration, Composer autoload, GD, photo paths, branding assets, and write permissions. Resolve missing active-student matches before generating cards from the paid queue.
+Remaining deployment work: supply the authoritative CU session/role resolver, enable GD, configure credentials/storage/error display for the host, and validate actual duplex/printer/ribbon behavior separately. Phase 5 should implement Student Affairs refund approval through the existing shared service. The account-officer UI remains a later separately approved phase.

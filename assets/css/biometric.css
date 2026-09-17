@@ -241,6 +241,7 @@ select {
 
 .content {
     flex: 1;
+    min-width: 0;
     padding: 26px 36px 34px 32px;
 }
 
@@ -363,7 +364,7 @@ select {
 
 .page h1 {
     margin: 0;
-    font-size: clamp(2.2rem, 2.4vw, 3.25rem);
+    font-size: clamp(1.65rem, 2vw, 2.25rem);
     line-height: 1.08;
     font-weight: 700;
     letter-spacing: -0.04em;
@@ -930,3 +931,9 @@ select {
         grid-template-columns: 1fr;
     }
 }
+
+/* Officer confirmations reuse the dashboard buttons and palette. */
+#officerConfirmation { width: min(520px, calc(100vw - 32px)); border: 1px solid #ddd; border-radius: 12px; padding: 24px; color: #242124; }
+#officerConfirmation::backdrop { background: rgba(0,0,0,.45); }
+#officerConfirmation p { line-height: 1.6; }
+#officerConfirmation .action-row { justify-content: flex-end; }

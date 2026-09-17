@@ -20,6 +20,7 @@ foreach ([['input' => $reportFromInput, 'output' => 'reportFrom'], ['input' => $
 }
 
 try {
+    if (!$officer) throw new DomainException('Sign in required.');
     $database = new Database();
     $collegeRows = $database->getAllColleges();
     $reportRows = $database->getBatchReports($reportCollegeId ?: null, $reportStatus, $reportFrom, $reportTo);

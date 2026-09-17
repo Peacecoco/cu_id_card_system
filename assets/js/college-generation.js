@@ -10,10 +10,12 @@
         const previewState = document.getElementById('previewState');
         const generateButton = collegePrintForm.querySelector('[type="submit"]');
         generateButton.disabled = true;
+        setPendingBatchPrint(null);
         previewState.innerHTML = '<div class="preview-message">Generating the selected ID-card batch...</div>';
 
         fetch(collegePrintForm.action, {
                 method: 'POST',
+                headers: {'X-CSRF-Token': officerCsrf},
                 body: new FormData(collegePrintForm)
             })
             .then(function(response) {

@@ -14,6 +14,7 @@ $selectedLevel = in_array($selectedLevel, $levelOptions, true) ? $selectedLevel 
 $studentCount = 0;
 $studentLoadError = '';
 try {
+    if (!$officer) throw new DomainException('Sign in required.');
     $database = new Database();
     $collegeRows = $database->getAllColleges();
     foreach ($collegeRows as $college) {

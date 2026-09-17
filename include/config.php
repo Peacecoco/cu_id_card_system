@@ -1,18 +1,20 @@
 <?php
 // config.php - central configuration
+date_default_timezone_set('Africa/Lagos');
 
 // --- Database ---
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'idcard_system');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_HOST', getenv('CU_IDCARD_DB_HOST') ?: 'localhost');
+define('DB_NAME', getenv('CU_IDCARD_DB_NAME') ?: 'idcard_system');
+define('DB_USER', getenv('CU_IDCARD_DB_USER') ?: 'root');
+define('DB_PASS', getenv('CU_IDCARD_DB_PASS') ?: '');
 
 // --- Paths ---
 define('BASE_PATH', dirname(__DIR__));
 define('TEMPLATES_PATH', BASE_PATH . '/assets/idcardtemplates');
-define('OUTPUT_PATH', BASE_PATH . '/output');
-define('PROCESSED_PHOTOS_PATH', BASE_PATH . '/uploads/photos_processed');
-define('MPDF_TEMP_PATH', BASE_PATH . '/tmp/mpdf');
+define('OUTPUT_PATH', getenv('CU_IDCARD_OUTPUT_PATH') ?: BASE_PATH . '/output');
+define('PROCESSED_PHOTOS_PATH', getenv('CU_IDCARD_PROCESSED_PATH') ?: BASE_PATH . '/uploads/photos_processed');
+define('MPDF_TEMP_PATH', getenv('CU_IDCARD_MPDF_PATH') ?: BASE_PATH . '/tmp/mpdf');
+define('REPLACEMENT_PHOTOS_PATH', getenv('CU_IDCARD_REPLACEMENT_PHOTOS_PATH') ?: dirname(BASE_PATH).'/cu_student/uploads/idcard');
 
 /**
  * Convert a local Windows path into a URI that mPDF can reliably load from

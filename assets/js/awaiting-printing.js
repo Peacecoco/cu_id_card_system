@@ -37,28 +37,27 @@
 
         event.preventDefault();
         const selectedInputs = Array.from(awaitingPrintForm.querySelectorAll('input[name="reference_numbers[]"]:checked'));
-        const studentIds = selectedInputs
-            .map(function(input) { return input.dataset.studentId; })
-            .filter(function(studentId) { return studentId && studentId !== '0'; });
+        const references = selectedInputs.map(input => input.value);
         const previewState = document.getElementById('awaitingPrintPreviewState');
 
-        if (!studentIds.length) {
+        if (!references.length) {
             previewState.innerHTML = '<div class="preview-message">Select at least one application with a matching active student record.</div>';
             return;
         }
 
         submitter.disabled = true;
+        setPendingBatchPrint(null);
         previewState.innerHTML = '<div class="preview-message">Generating selected ID cards...</div>';
 
         const requestData = new FormData();
-        studentIds.forEach(function(studentId) {
-            requestData.append('student_ids[]', studentId);
-        });
+        references.forEach(reference => requestData.append('reference_numbers[]', reference));
+        requestData.append('window', document.getElementById('printingWindow').value);
         requestData.append('preview', '1');
         requestData.append('generated_by', 'awaiting-print');
 
         fetch('generate_batch.php', {
                 method: 'POST',
+                headers: {'X-CSRF-Token': officerCsrf},
                 body: requestData
             })
             .then(function(response) {
@@ -72,7 +71,7 @@
                 previewState.innerHTML = '<iframe class="selective-preview-frame" title="Awaiting-print ID card PDF preview" src="' + viewerUrl + '"></iframe>' +
                     '<a class="preview-download" href="' + data.pdf_url + '" download="' + data.download_name + '">Download PDF</a>' +
                     '<a class="preview-open" href="' + viewerUrl + '" target="_blank" rel="noopener">Open full viewer</a>';
-                setPendingBatchPrint(data.batch_id, selectedInputs.map(function(input) { return input.value; }));
+                setPendingBatchPrint(data.batch_id);
             })
             .catch(function(error) {
                 previewState.innerHTML = '<div class="preview-message">' + error.message + '</div>';

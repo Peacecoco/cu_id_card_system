@@ -6,6 +6,7 @@ $legacyPages = [
     'selective-printing' => 'selective-printing.php',
     'awaiting-print' => 'awaiting-printing.php',
     'awaiting-printing' => 'awaiting-printing.php',
+    'collection' => 'collection.php',
     'reports' => 'reports.php',
 ];
 $legacySection = $_GET['section'] ?? '';

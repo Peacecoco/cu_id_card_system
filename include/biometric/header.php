@@ -77,9 +77,8 @@
             </header>
 
             <?php if ($batchPrintMessage !== ''): ?>
-                <script>window.alert(<?php echo json_encode($batchPrintMessage); ?>);</script>
+                <div class="status-message" role="status"><?php echo htmlspecialchars($batchPrintMessage); ?></div>
             <?php endif; ?>
             <?php if ($batchPrintError !== ''): ?>
                 <div class="status-message error"><?php echo htmlspecialchars($batchPrintError); ?></div>
             <?php endif; ?>
-

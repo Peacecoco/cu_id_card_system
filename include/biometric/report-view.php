@@ -93,8 +93,12 @@
                                             <td><?php echo (int) $row['success_count']; ?></td>
                                             <td><?php echo (int) $row['failure_count']; ?></td>
                                             <td class="report-status <?php echo htmlspecialchars($row['status']); ?>"><?php echo htmlspecialchars($row['status']); ?></td>
-                                            <td class="report-status <?php echo $row['print_status'] === 'printed' ? 'completed' : ''; ?>"><?php echo htmlspecialchars(str_replace('_', ' ', $row['print_status'])); ?></td>
-                                            <td><?php if (is_file($row['pdf_path'])): ?><a class="report-link" href="../output/<?php echo rawurlencode(basename($row['pdf_path'])); ?>" target="_blank" rel="noopener">Open PDF</a><?php else: ?>Unavailable<?php endif; ?></td>
+                                            <td class="report-status <?php echo $row['print_status'] === 'printed' ? 'completed' : ''; ?>"><?php echo htmlspecialchars(str_replace('_', ' ', $row['print_status'])); ?>
+                                                <?php if ($row['status']==='completed' && $row['print_status']==='awaiting_print'): ?>
+                                                <button class="btn secondary confirm-batch-print" type="button" data-batch-id="<?php echo (int)$row['id']; ?>">Confirm print</button>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><?php if (is_file($row['pdf_path'])): ?><a class="report-link" href="batch-pdf.php?batch_id=<?php echo (int)$row['id']; ?>" target="_blank" rel="noopener">Open PDF</a><?php else: ?>Unavailable<?php endif; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>

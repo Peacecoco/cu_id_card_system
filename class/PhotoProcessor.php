@@ -19,7 +19,7 @@ class PhotoProcessor
      * Process one photo and return the path to the processed file.
      * Throws on failure so the caller can log and skip that student.
      */
-    public static function process(string $sourcePath, string $studentMatricNo): string
+    public static function process(string $sourcePath, string $studentMatricNo, ?string $outputDirectory = null): string
     {
         if (!file_exists($sourcePath)) {
             throw new RuntimeException("Photo not found: {$sourcePath}");
@@ -75,13 +75,14 @@ class PhotoProcessor
         imagefilter($resized, IMG_FILTER_BRIGHTNESS, 5);
         imagefilter($resized, IMG_FILTER_CONTRAST, -3);
 
-        if (!is_dir(PROCESSED_PHOTOS_PATH)) {
-            mkdir(PROCESSED_PHOTOS_PATH, 0755, true);
+        $outputDirectory=$outputDirectory ?? PROCESSED_PHOTOS_PATH;
+        if (!is_dir($outputDirectory)) {
+            mkdir($outputDirectory, 0755, true);
         }
 
-        $outputPath = PROCESSED_PHOTOS_PATH . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $studentMatricNo) . '.jpg';
+        $outputPath = $outputDirectory . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $studentMatricNo) . '.jpg';
 
-        imagejpeg($resized, $outputPath, PHOTO_JPEG_QUALITY);
+        if (!imagejpeg($resized, $outputPath, PHOTO_JPEG_QUALITY)) throw new RuntimeException('Unable to save processed photo.');
 
         imagedestroy($source);
         imagedestroy($resized);

@@ -5,6 +5,7 @@ $searchResults = [];
 $selectedStudents = [];
 $searchError = '';
 try {
+    if (!$officer) throw new DomainException('Sign in required.');
     $database = new Database();
     $selectedStudents = $database->getActiveStudentsByIds($selectedIds);
     if ($studentSearch !== '') {

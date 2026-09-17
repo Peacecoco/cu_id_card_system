@@ -9,10 +9,17 @@
 
                     <h1 id="page-title">Awaiting Printing</h1>
                     <p class="subtitle">Paid ID-card applications waiting to be physically printed.</p>
+                    <p class="subtitle">Historical applications with unknown payment details require reconciliation and are excluded. Generating or downloading a PDF does not confirm physical printing.</p>
 
                     <form class="report-toolbar" method="get" action="awaiting-printing.php">
                         <label>Search queue
                             <input type="search" name="awaiting_print_search" value="<?php echo htmlspecialchars($awaitingPrintSearch); ?>" placeholder="Name, matric number, reference, or programme">
+                        </label>
+                        <label>Filter
+                            <select name="window" id="printingWindow">
+                                <option value="after" <?php echo $printingWindow==='after' ? 'selected' : ''; ?>>After 72 Hours</option>
+                                <option value="before" <?php echo $printingWindow==='before' ? 'selected' : ''; ?>>Before 72 Hours</option>
+                            </select>
                         </label>
                         <button class="btn primary" type="submit">Search</button>
                     </form>
@@ -39,21 +46,20 @@
                                             <th>Student</th>
                                             <th>Programme / Department</th>
                                             <th>Application type</th>
-                                            <th>Submitted</th>
-                                            <th>Status</th>
+                                            <th>Paid At (Lagos)</th>
+                                            <th>Refund Window</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                     <?php foreach ($awaitingPrintApplications as $application): ?>
-                                        <?php $canGenerateCard = !empty($application['student_id']) && $application['student_status'] === 'active'; ?>
                                         <tr>
-                                            <td><input type="checkbox" name="reference_numbers[]" value="<?php echo htmlspecialchars($application['referencenumber']); ?>" data-student-id="<?php echo (int) $application['student_id']; ?>" <?php echo $canGenerateCard ? '' : 'disabled'; ?> aria-label="Select <?php echo htmlspecialchars($application['referencenumber']); ?>"></td>
+                                            <td><input type="checkbox" name="reference_numbers[]" value="<?php echo htmlspecialchars($application['referencenumber']); ?>" aria-label="Select <?php echo htmlspecialchars($application['referencenumber']); ?>"></td>
                                             <td><strong><?php echo htmlspecialchars($application['referencenumber']); ?></strong></td>
-                                            <td><?php echo htmlspecialchars($application['applicant_name'] ?: $application['matricnumber']); ?><br><small><?php echo htmlspecialchars($application['matricnumber']); ?></small></td>
-                                            <td><?php echo htmlspecialchars($application['programme'] ?: ($application['department'] ?: 'Not available')); ?><?php if (!$canGenerateCard): ?><br><small>Matching active student record required for batch generation.</small><?php endif; ?></td>
+                                            <td><?php echo htmlspecialchars($application['full_name'] ?: $application['matricnumber']); ?><br><small><?php echo htmlspecialchars($application['matricnumber']); ?></small></td>
+                                            <td><?php echo htmlspecialchars($application['programme'] ?: ($application['department'] ?: 'Not available')); ?></td>
                                             <td><?php echo htmlspecialchars(ucfirst($application['applicationtype'])); ?></td>
-                                            <td><?php echo htmlspecialchars((new DateTime($application['createdat']))->format('d/m/Y H:i')); ?></td>
-                                            <td class="report-status">Awaiting print</td>
+                                            <td><?php echo htmlspecialchars((new DateTime($application['paidat']))->format('d/m/Y H:i')); ?></td>
+                                            <td><?php echo $printingWindow==='before' ? 'Emergency print — refund window ends ' : 'Normal waiting period elapsed — ended '; ?><?php echo CU\IdCard\Rules::deadline($application)->format('d/m/Y H:i'); ?></td>
                                             <td hidden>
                                                     <span aria-hidden="true"> · </span>
                                             </td>

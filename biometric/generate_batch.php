@@ -14,9 +14,21 @@ require __DIR__ . '/../include/config.php';
 require __DIR__ . '/../class/Database.php';
 require __DIR__ . '/../class/PhotoProcessor.php';
 require __DIR__ . '/../class/Renderer.php';
+require __DIR__ . '/../include/session.php';
 
 $isCli = PHP_SAPI === 'cli';
-$request = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
+try {
+    $actor=currentOfficer();
+} catch (Throwable $e) {
+    if ($isCli) { fwrite(STDERR,"Authorized ID Card Officer identity is required.\n"); exit(1); }
+    http_response_code(403); header('Content-Type: application/json'); exit(json_encode(['message'=>'Authorized ID Card Officer login is required.']));
+}
+if (!$isCli) {
+    if (($_SERVER['REQUEST_METHOD'] ?? '')!=='POST') { http_response_code(405); header('Allow: POST'); exit('Use POST to generate a batch.'); }
+    try { requireOfficerCsrf($actor); } catch (DomainException $e) { header('Content-Type: application/json'); exit(json_encode(['message'=>$e->getMessage()])); }
+    session_write_close();
+}
+$request = $isCli ? [] : $_POST;
 $collegeId = $isCli
     ? (isset($argv[1]) ? (int) $argv[1] : null)
     : (isset($request['college_id']) ? (int) $request['college_id'] : null);
@@ -39,7 +51,7 @@ $generatedBy = in_array($generatedByInput, ['selective', 'awaiting-print', 'temp
     ? $generatedByInput
     : null;
 
-if (!$collegeId && empty($studentIds)) {
+if (!$collegeId && empty($studentIds) && $generatedBy!=='awaiting-print') {
     $message = $isCli
         ? "Usage: php biometric/generate_batch.php <college_id>\n"
         : 'Missing or invalid college_id.';
@@ -55,6 +67,16 @@ if (!$collegeId && empty($studentIds)) {
 
 try {
     $db = new Database();
+    $renderer = new Renderer($db);
+    if ($generatedBy==='awaiting-print') {
+        $references=$_POST['reference_numbers'] ?? [];
+        $window=$_POST['window'] ?? 'after';
+        if (!is_array($references) || count($references)>200 || array_filter($references,static fn($v)=>!is_string($v)) || !is_string($window) || $studentIds || $collegeId || $temporary) throw new DomainException('Invalid replacement selection.');
+        $lifecycle=officerLifecycle($db);
+        $selection=$lifecycle->printingSelection($actor,$references,$window);
+        $result=$renderer->generateReplacementBatch($selection,$lifecycle,$actor,$window);
+    } else {
+    if (!empty($_POST['reference_numbers'])) throw new DomainException('Use the replacement printing queue for applications.');
 
     // Step 1: pre-process photos (skips already-processed ones)
     $students = empty($studentIds)
@@ -79,7 +101,8 @@ try {
     $renderer = new Renderer($db);
     $result = empty($studentIds)
         ? $renderer->generateCollegeBatch($collegeId, generatedBy: $isCli ? 'cli' : ($generatedBy ?: 'web'), temporary: $temporary, level: $level, programmeId: $programmeId)
-        : $renderer->generateStudentsBatch($students, generatedBy: $generatedBy ?: 'selective');
+        : $renderer->generateStudentsBatch($db->getActiveStudentsByIds($studentIds), generatedBy: $generatedBy ?: 'selective', temporary: $temporary);
+    }
 
     if ($isCli) {
         echo "\nBatch complete.\n";
@@ -103,7 +126,7 @@ try {
 
     $downloadName = basename($result['pdf_path']);
     if ($preview) {
-        $pdfUrl = '../output/' . rawurlencode($downloadName);
+        $pdfUrl = 'batch-pdf.php?batch_id=' . (int)$result['batch_id'];
         header('Content-Type: application/json');
         echo json_encode([
             'pdf_url' => $pdfUrl,
@@ -126,8 +149,11 @@ try {
     if ($isCli) {
         fwrite(STDERR, $message);
     } else {
-        http_response_code(500);
-        echo nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+        error_log($message);
+        if ($e->getPrevious()) error_log('Generation cause: '.$e->getPrevious()->getMessage());
+        http_response_code($e instanceof DomainException ? 409 : 500);
+        header('Content-Type: application/json');
+        echo json_encode(['message'=>$e instanceof DomainException ? $e->getMessage() : 'Unable to generate this batch. Check the selected application photo and refresh the queue.']);
     }
     exit(1);
 }

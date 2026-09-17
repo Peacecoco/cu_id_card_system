@@ -32,6 +32,7 @@
         const generateButton = selectionForm.querySelector('[type="submit"]');
         if (generateButton) {
             generateButton.disabled = true;
+        setPendingBatchPrint(null);
         }
     });
 
@@ -54,10 +55,12 @@
         const previewState = document.getElementById('selectivePreviewState');
         const generateButton = selectionForm.querySelector('[type="submit"]');
         generateButton.disabled = true;
+        setPendingBatchPrint(null);
         previewState.innerHTML = '<div class="preview-message">Generating selected ID cards...</div>';
 
         fetch(selectionForm.action, {
                 method: 'POST',
+                headers: {'X-CSRF-Token': officerCsrf},
                 body: new FormData(selectionForm)
             })
             .then(function(response) {

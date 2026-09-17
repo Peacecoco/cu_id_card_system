@@ -14,6 +14,16 @@ class Database
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
+        $this->pdo->exec("SET time_zone = '+01:00'");
+    }
+
+    public function connection(): PDO { return $this->pdo; }
+
+    public function getBatch(int $id): ?array
+    {
+        $q=$this->pdo->prepare('SELECT * FROM id_card_batches WHERE id=?');
+        $q->execute([$id]);
+        return $q->fetch() ?: null;
     }
 
     public function getCollege(int $collegeId): array
@@ -122,7 +132,8 @@ class Database
         $stmt = $this->pdo->prepare(
             "UPDATE id_card_batches
              SET print_status = 'printed', print_method = 'local', printed_at = NOW()
-             WHERE id = ? AND status = 'completed' AND print_status = 'awaiting_print'"
+             WHERE id = ? AND status = 'completed' AND print_status = 'awaiting_print'
+             AND NOT EXISTS (SELECT 1 FROM id_card_batch_items i WHERE i.batch_id=id_card_batches.id AND i.applicationid IS NOT NULL)"
         );
         $stmt->execute([$batchId]);
         return $stmt->rowCount() === 1;
@@ -141,7 +152,7 @@ class Database
                          s.full_name AS applicant_name, s.department, s.programme
                   FROM idcardapplications a
                   LEFT JOIN students s ON s.matric_no = a.matricnumber
-                  WHERE a.status = 'paid'";
+                  WHERE a.status = 'paid' AND a.paymentstatus IS NULL";
         $parameters = [];
 
         if ($searchTerm !== '') {
@@ -173,7 +184,7 @@ class Database
         $stmt = $this->pdo->prepare(
             "UPDATE idcardapplications
              SET status = 'printed', printmethod = ?, printedat = NOW(), updatedat = NOW()
-             WHERE status = 'paid' AND referencenumber IN ({$placeholders})"
+             WHERE status = 'paid' AND paymentstatus IS NULL AND referencenumber IN ({$placeholders})"
         );
         $stmt->execute(array_merge([$printMethod], $referenceNumbers));
         return $stmt->rowCount();
