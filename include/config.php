@@ -3,10 +3,10 @@
 date_default_timezone_set('Africa/Lagos');
 
 // --- Database ---
-define('DB_HOST', getenv('CU_IDCARD_DB_HOST') ?: 'localhost');
-define('DB_NAME', getenv('CU_IDCARD_DB_NAME') ?: 'idcard_system');
-define('DB_USER', getenv('CU_IDCARD_DB_USER') ?: 'root');
-define('DB_PASS', getenv('CU_IDCARD_DB_PASS') ?: '');
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'idcard_system');
+define('DB_USER', 'root');
+define('DB_PASS', '');
 
 // --- Paths ---
 define('BASE_PATH', dirname(__DIR__));

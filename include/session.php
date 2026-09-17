@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__.'/../shared/lifecycle/bootstrap.php';
+require_once __DIR__.'/../domain/bootstrap.php';
 use CU\IdCard\{Identity,PortalSessionAdapter,Lifecycle,LocalPaymentSimulator};
 
 if (PHP_SAPI !== 'cli' && session_status() !== PHP_SESSION_ACTIVE) {

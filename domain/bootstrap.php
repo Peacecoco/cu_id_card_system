@@ -2,7 +2,8 @@
 declare(strict_types=1);
 date_default_timezone_set('Africa/Lagos');
 // Local developer settings only. Real web-server environment variables always win.
-$envFile = dirname(__DIR__, 3) . '/.env';
+$envFile = dirname(__DIR__) . '/.env';
+if (!is_file($envFile)) $envFile = dirname(__DIR__, 2) . '/.env';
 if (is_file($envFile) && is_readable($envFile)) {
     foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
         $line = trim($line);
